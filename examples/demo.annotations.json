@@ -1,0 +1,202 @@
+{
+  "schema_version": 2,
+  "recording": {
+    "id": "synthetic-demo-v1",
+    "file_name": "SYNTHETIC DEMO · 30 s · no patient data",
+    "file_size_bytes": null,
+    "synthetic": true,
+    "time_basis": "relative_seconds_from_sample_zero",
+    "channels": [
+      {
+        "id": "ch0",
+        "name": "Synthetic ECG I",
+        "units": "mV",
+        "sample_rate_hz": 500,
+        "sample_count": 15000
+      },
+      {
+        "id": "ch1",
+        "name": "Synthetic ECG II",
+        "units": "mV",
+        "sample_rate_hz": 500,
+        "sample_count": 15000
+      },
+      {
+        "id": "ch2",
+        "name": "Synthetic ECG III",
+        "units": "mV",
+        "sample_rate_hz": 250,
+        "sample_count": 7500
+      },
+      {
+        "id": "ch3",
+        "name": "Synthetic plethysmography",
+        "units": "a.u.",
+        "sample_rate_hz": 125,
+        "sample_count": 3750
+      },
+      {
+        "id": "ch4",
+        "name": "Synthetic SpO₂",
+        "units": "%",
+        "sample_rate_hz": 25,
+        "sample_count": 750
+      },
+      {
+        "id": "ch5",
+        "name": "Synthetic pulse",
+        "units": "a.u.",
+        "sample_rate_hz": 100,
+        "sample_count": 3000
+      }
+    ]
+  },
+  "annotations": [
+    {
+      "id": "event-1",
+      "location": {
+        "type": "point",
+        "channel_ids": [
+          "ch0"
+        ],
+        "start": {
+          "seconds": 0.24,
+          "sample_index": 120
+        },
+        "end": null,
+        "amplitude": {
+          "units": "mV",
+          "value": 1.1918678594854704,
+          "minimum": null,
+          "maximum": null
+        }
+      },
+      "label": {
+        "code": "maximum",
+        "text": "Example manual maximum",
+        "attributes": {}
+      },
+      "provenance": {
+        "origin": "manual",
+        "author": "synthetic-example",
+        "created_at": "2026-10-02T00:00:00+00:00",
+        "proposal_id": null
+      },
+      "extensions": {}
+    },
+    {
+      "id": "event-2",
+      "location": {
+        "type": "interval",
+        "channel_ids": [],
+        "start": {
+          "seconds": 1,
+          "sample_index": null
+        },
+        "end": {
+          "seconds": 2,
+          "sample_index": null
+        },
+        "amplitude": null
+      },
+      "label": {
+        "code": "artifact",
+        "text": "Example global interval",
+        "attributes": {}
+      },
+      "provenance": {
+        "origin": "manual",
+        "author": "synthetic-example",
+        "created_at": "2026-10-02T00:00:00+00:00",
+        "proposal_id": null
+      },
+      "extensions": {}
+    },
+    {
+      "id": "region-1",
+      "location": {
+        "type": "region",
+        "channel_ids": [
+          "ch0"
+        ],
+        "start": {
+          "seconds": 3,
+          "sample_index": null
+        },
+        "end": {
+          "seconds": 4,
+          "sample_index": null
+        },
+        "amplitude": {
+          "units": "mV",
+          "value": null,
+          "minimum": -0.2,
+          "maximum": 0.7
+        }
+      },
+      "label": {
+        "code": "review_area",
+        "text": "Future review region",
+        "attributes": {}
+      },
+      "provenance": {
+        "origin": "manual",
+        "author": "synthetic-example",
+        "created_at": "2026-10-02T00:00:00+00:00",
+        "proposal_id": null
+      },
+      "extensions": {
+        "example": true
+      }
+    },
+    {
+      "id": "record-1",
+      "location": {
+        "type": "recording",
+        "channel_ids": [],
+        "start": null,
+        "end": null,
+        "amplitude": null
+      },
+      "label": {
+        "code": "quality",
+        "text": "Synthetic recording",
+        "attributes": {
+          "status": "illustrative"
+        }
+      },
+      "provenance": {
+        "origin": "manual",
+        "author": "synthetic-example",
+        "created_at": "2026-10-02T00:00:00+00:00",
+        "proposal_id": null
+      },
+      "extensions": {}
+    }
+  ],
+  "proposals": [],
+  "relationships": [
+    {
+      "id": "relation-1",
+      "source": {
+        "type": "annotation",
+        "id": "event-1"
+      },
+      "target": {
+        "type": "channel",
+        "id": "ch3"
+      },
+      "label": {
+        "code": "associated_channel",
+        "text": "Example relationship, no automatic analysis",
+        "attributes": {}
+      },
+      "extensions": {}
+    }
+  ],
+  "metadata": {
+    "protocol": "synthetic demo",
+    "contains_patient_data": false
+  },
+  "extensions": {}
+}

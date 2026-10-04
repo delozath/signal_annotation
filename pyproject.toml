@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "signal_annotation"
+version = "0.2.0"
+description = "Local BIOPAC ACQ viewer and manual annotation with Bokeh"
+requires-python = ">=3.11"
+dependencies = ["bokeh==3.10.0", "bioread==3.1.0", "numpy>=1.26,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "jsonschema>=4,<5"]
+[project.scripts]
+signal_annotation = "signal_annotation.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

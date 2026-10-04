@@ -1,0 +1,617 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "recording": {
+      "$ref": "#/$defs/recording"
+    },
+    "annotations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/annotation"
+      }
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/proposal"
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relationship"
+      }
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "extensions": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "recording",
+    "annotations",
+    "proposals",
+    "relationships",
+    "metadata",
+    "extensions"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ACQ Annotation Sidecar · format 2",
+  "description": "Current state only. Cross-reference, ACQ identity, sample/time/amplitude and bounds checks are additionally enforced by Python.",
+  "$defs": {
+    "coordinate": {
+      "type": "object",
+      "properties": {
+        "seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sample_index": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "seconds",
+        "sample_index"
+      ],
+      "additionalProperties": false
+    },
+    "amplitude": {
+      "type": "object",
+      "properties": {
+        "units": {
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "units",
+        "value",
+        "minimum",
+        "maximum"
+      ],
+      "additionalProperties": false
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "point",
+            "interval",
+            "region",
+            "recording"
+          ]
+        },
+        "channel_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "start": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/coordinate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/coordinate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "amplitude": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/amplitude"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "channel_ids",
+        "start",
+        "end",
+        "amplitude"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "point"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "channel_ids": {
+                "minItems": 1,
+                "maxItems": 1
+              },
+              "start": {
+                "$ref": "#/$defs/coordinate"
+              },
+              "end": {
+                "type": "null"
+              },
+              "amplitude": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/amplitude"
+                  },
+                  {
+                    "properties": {
+                      "value": {
+                        "type": "number"
+                      },
+                      "minimum": {
+                        "type": "null"
+                      },
+                      "maximum": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "interval"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "start": {
+                "$ref": "#/$defs/coordinate"
+              },
+              "end": {
+                "$ref": "#/$defs/coordinate"
+              },
+              "amplitude": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "region"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "channel_ids": {
+                "minItems": 1,
+                "maxItems": 1
+              },
+              "start": {
+                "$ref": "#/$defs/coordinate"
+              },
+              "end": {
+                "$ref": "#/$defs/coordinate"
+              },
+              "amplitude": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/amplitude"
+                  },
+                  {
+                    "properties": {
+                      "value": {
+                        "type": "null"
+                      },
+                      "minimum": {
+                        "type": "number"
+                      },
+                      "maximum": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "recording"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "channel_ids": {
+                "maxItems": 0
+              },
+              "start": {
+                "type": "null"
+              },
+              "end": {
+                "type": "null"
+              },
+              "amplitude": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "label": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "attributes": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "code",
+        "text",
+        "attributes"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "enum": [
+            "manual",
+            "model_reviewed"
+          ]
+        },
+        "author": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "proposal_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "origin",
+        "author",
+        "created_at",
+        "proposal_id"
+      ],
+      "additionalProperties": false
+    },
+    "annotation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "extensions": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "location",
+        "label",
+        "provenance",
+        "extensions"
+      ],
+      "additionalProperties": false
+    },
+    "proposal": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "model_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "reviewed_by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewed_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extensions": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "location",
+        "label",
+        "model_name",
+        "model_version",
+        "confidence",
+        "created_at",
+        "status",
+        "reviewed_by",
+        "reviewed_at",
+        "extensions"
+      ],
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "annotation",
+            "channel"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "relationship": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/reference"
+        },
+        "target": {
+          "$ref": "#/$defs/reference"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        },
+        "extensions": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "label",
+        "extensions"
+      ],
+      "additionalProperties": false
+    },
+    "channel": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "units": {
+          "type": "string"
+        },
+        "sample_rate_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "units",
+        "sample_rate_hz",
+        "sample_count"
+      ],
+      "additionalProperties": false
+    },
+    "recording": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file_size_bytes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "synthetic": {
+          "type": "boolean"
+        },
+        "time_basis": {
+          "const": "relative_seconds_from_sample_zero"
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/channel"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "file_name",
+        "file_size_bytes",
+        "synthetic",
+        "time_basis",
+        "channels"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
