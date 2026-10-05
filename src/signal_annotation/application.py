@@ -4,7 +4,49 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 from .domain import Annotation, Amplitude, Coordinate, Label, Location, Provenance, ValidationError
-from .validation import text, validate_workspace
+from .validation import (AMPLITUDE_LABEL_CATALOG_KEY, AMPLITUDE_LABEL_COLOR_ATTRIBUTE,
+                         AMPLITUDE_LABEL_COLORS, AMPLITUDE_LABEL_NAME_ATTRIBUTE,
+                         GENERAL_NOTES_KEY, INTERVAL_LABEL_CATALOG_KEY,
+                         INTERVAL_LABEL_COLOR_ATTRIBUTE, INTERVAL_LABEL_COLORS,
+                         INTERVAL_LABEL_NAME_ATTRIBUTE, amplitude_label_catalog,
+                         interval_label_catalog, text, validate_workspace)
+
+
+# These colors are deliberately fixed: a saved generic marker keeps the same color
+# after a reload, and old point annotations can be given a stable display color.
+MARKER_COLOR_ATTRIBUTE = AMPLITUDE_LABEL_COLOR_ATTRIBUTE
+MARKER_COLORS = AMPLITUDE_LABEL_COLORS
+
+LEGACY_INTERVAL_COLOR = "#2d927d"
+
+
+def point_colors(annotations):
+    """Return deterministic palette assignments for all active point annotations.
+
+    Persisted valid colors take precedence, including repeated colors for points that
+    share a catalog label. Points from older sidecars, including legacy maxima/minima,
+    receive a stable color by annotation order without changing their on-disk labels.
+    """
+    points = [a for a in annotations if a.location.type == "point"]
+    assigned = {}
+    for index, annotation in enumerate(points):
+        color = annotation.label.attributes.get(MARKER_COLOR_ATTRIBUTE)
+        assigned[annotation.id] = (color if color in MARKER_COLORS else
+                                   MARKER_COLORS[index % len(MARKER_COLORS)])
+    return assigned
+
+
+def interval_color(annotation, workspace):
+    """Return a persisted catalog color or the stable legacy interval color."""
+    if annotation.location.type != "interval":
+        raise ValidationError("Only intervals have interval-label colors.")
+    attributes = annotation.label.attributes
+    catalog_name = attributes.get(INTERVAL_LABEL_NAME_ATTRIBUTE)
+    for entry in interval_label_catalog(workspace.metadata):
+        if (entry["name"] == catalog_name == annotation.label.text and
+                entry["color"] == attributes.get(INTERVAL_LABEL_COLOR_ATTRIBUTE)):
+            return entry["color"]
+    return LEGACY_INTERVAL_COLOR
 
 
 def now():
@@ -23,9 +65,12 @@ class AnnotationService:
         self.repository.save(candidate)
         self.workspace = candidate  # Failed writes leave visible current state untouched.
 
-    def _manual(self, kind, channel_id, start, end, label, identity=None):
-        if kind not in {"maximum", "minimum", "interval"}:
-            raise ValidationError("Choose maximum, minimum, or interval.")
+    def _manual(self, kind, channel_id, start, end, label, identity=None, attributes=None):
+        # ``maximum`` and ``minimum`` are kept for existing sidecars and callers.
+        # New UI-created points use the generic ``marker`` code and copy their
+        # selected catalog name into ``Label.text``.
+        if kind not in {"marker", "maximum", "minimum", "interval"}:
+            raise ValidationError("Choose an amplitude marker or interval.")
         if kind == "interval":
             loc = Location("interval", () if channel_id is None else (channel_id,),
                            Coordinate(start), Coordinate(end))
@@ -35,10 +80,90 @@ class AnnotationService:
             loc = Location("point", (channel_id,), Coordinate(seconds, i), amplitude=Amplitude(ch.units, value))
             if end is not None:
                 raise ValidationError("A point does not have an end time.")
-        return Annotation(identity or str(uuid4()), loc, Label(kind, label.strip()), Provenance("manual", self.author, now()))
+        if kind == "marker":
+            label = text(label, "Marker name")
+        return Annotation(identity or str(uuid4()), loc, Label(kind, label.strip(), attributes or {}),
+                          Provenance("manual", self.author, now()))
 
     def add(self, kind, channel_id, start, end, label):
         annotation = self._manual(kind, channel_id, start, end, label)
+        candidate = deepcopy(self.workspace)
+        candidate.annotations.append(annotation)
+        self._commit(candidate)
+        return annotation
+
+    def add_amplitude_label(self, name):
+        """Append one unique amplitude label to its independent persistent catalog."""
+        name = text(name, "Amplitude label name").strip()
+        candidate = deepcopy(self.workspace)
+        catalog = list(amplitude_label_catalog(candidate.metadata))
+        if any(entry["name"].casefold() == name.casefold() for entry in catalog):
+            raise ValidationError("Amplitude label names must be unique.")
+        if len(catalog) >= len(AMPLITUDE_LABEL_COLORS):
+            raise ValidationError(f"At most {len(AMPLITUDE_LABEL_COLORS)} amplitude labels may be registered.")
+        used = {entry["color"] for entry in catalog}
+        entry = {"name": name, "color": next(color for color in AMPLITUDE_LABEL_COLORS
+                                               if color not in used)}
+        catalog.append(entry)
+        candidate.metadata[AMPLITUDE_LABEL_CATALOG_KEY] = catalog
+        self._commit(candidate)
+        return entry
+
+    def add_catalog_marker(self, channel_id, start, catalog_name):
+        """Create a point whose semantic label is selected from the amplitude catalog."""
+        if not isinstance(catalog_name, str):
+            raise ValidationError("Choose a registered amplitude label.")
+        entry = next((item for item in amplitude_label_catalog(self.workspace.metadata)
+                      if item["name"] == catalog_name), None)
+        if entry is None:
+            raise ValidationError("Choose a registered amplitude label.")
+        attributes = {AMPLITUDE_LABEL_NAME_ATTRIBUTE: entry["name"],
+                      AMPLITUDE_LABEL_COLOR_ATTRIBUTE: entry["color"]}
+        annotation = self._manual("marker", channel_id, start, None, entry["name"],
+                                  attributes=attributes)
+        candidate = deepcopy(self.workspace)
+        candidate.annotations.append(annotation)
+        self._commit(candidate)
+        return annotation
+
+    def add_interval_label(self, name):
+        """Append one unique interval label to the independent persistent catalog."""
+        name = text(name, "Interval label name").strip()
+        candidate = deepcopy(self.workspace)
+        catalog = list(interval_label_catalog(candidate.metadata))
+        if any(entry["name"].casefold() == name.casefold() for entry in catalog):
+            raise ValidationError("Interval label names must be unique.")
+        if len(catalog) >= len(INTERVAL_LABEL_COLORS):
+            raise ValidationError(f"At most {len(INTERVAL_LABEL_COLORS)} interval labels may be registered.")
+        used = {entry["color"] for entry in catalog}
+        entry = {"name": name, "color": next(color for color in INTERVAL_LABEL_COLORS
+                                                if color not in used)}
+        catalog.append(entry)
+        candidate.metadata[INTERVAL_LABEL_CATALOG_KEY] = catalog
+        self._commit(candidate)
+        return entry
+
+    def save_general_notes(self, notes):
+        """Persist recording-level free text without changing other metadata."""
+        if not isinstance(notes, str):
+            raise ValidationError("General recording notes must be a string.")
+        candidate = deepcopy(self.workspace)
+        # An empty string is the stable, explicit on-disk state for cleared notes.
+        candidate.metadata[GENERAL_NOTES_KEY] = notes
+        self._commit(candidate)
+
+    def add_catalog_interval(self, channel_id, start, end, catalog_name):
+        """Create an interval whose semantic label is selected from the catalog."""
+        if not isinstance(catalog_name, str):
+            raise ValidationError("Choose a registered interval label.")
+        entry = next((item for item in interval_label_catalog(self.workspace.metadata)
+                      if item["name"] == catalog_name), None)
+        if entry is None:
+            raise ValidationError("Choose a registered interval label.")
+        attributes = {INTERVAL_LABEL_NAME_ATTRIBUTE: entry["name"],
+                      INTERVAL_LABEL_COLOR_ATTRIBUTE: entry["color"]}
+        annotation = self._manual("interval", channel_id, start, end, entry["name"],
+                                  attributes=attributes)
         candidate = deepcopy(self.workspace)
         candidate.annotations.append(annotation)
         self._commit(candidate)
@@ -50,13 +175,74 @@ class AnnotationService:
             if old.id == annotation_id:
                 if old.origin != "manual" or old.location.type not in {"point", "interval"}:
                     raise ValidationError("The current interface edits only manual points/intervals.")
-                new = self._manual(kind, channel_id, start, end, label, old.id)
+                attributes = old.label.attributes
+                new = self._manual(kind, channel_id, start, end, label, old.id, attributes)
                 # Keep creation provenance and extension fields; overwrite current geometry/label.
-                new = replace(new, provenance=old.provenance, extensions=old.extensions,
-                              label=replace(new.label, attributes=old.label.attributes))
+                new = replace(new, provenance=old.provenance, extensions=old.extensions)
                 candidate.annotations[i] = new
                 self._commit(candidate)
                 return new
+        raise ValidationError("Unknown annotation.")
+
+    def move_point(self, annotation_id, start):
+        """Move one manual point to the real channel sample nearest ``start``."""
+        candidate = deepcopy(self.workspace)
+        for i, old in enumerate(candidate.annotations):
+            if old.id != annotation_id:
+                continue
+            if old.location.type != "point" or old.origin != "manual":
+                raise ValidationError("Only manual point annotations can be moved.")
+            channel = self.recording.channel(old.channel_id)
+            sample_index, seconds, value = channel.sample_at(start)
+            location = replace(old.location, start=Coordinate(seconds, sample_index),
+                               amplitude=Amplitude(channel.units, value))
+            moved = replace(old, location=location)
+            candidate.annotations[i] = moved
+            self._commit(candidate)
+            return moved
+        raise ValidationError("Unknown annotation.")
+
+    def resize_interval(self, annotation_id, endpoint, seconds):
+        """Move one boundary of a manual interval and persist the current state."""
+        if endpoint not in {"start", "end"}:
+            raise ValidationError("Choose the start or end of the interval.")
+        candidate = deepcopy(self.workspace)
+        for i, old in enumerate(candidate.annotations):
+            if old.id != annotation_id:
+                continue
+            if old.location.type != "interval" or old.origin != "manual":
+                raise ValidationError("Only manual interval annotations can be resized.")
+            # A dragged continuous boundary no longer claims an exact sample.  The
+            # untouched boundary, label, provenance, extensions, and list position
+            # remain byte-for-byte equivalent in the serialized model.
+            location = replace(old.location, **{endpoint: Coordinate(seconds)})
+            resized = replace(old, location=location)
+            candidate.annotations[i] = resized
+            self._commit(candidate)
+            return resized
+        raise ValidationError("Unknown annotation.")
+
+    def reassign_point_label(self, annotation_id, catalog_name):
+        """Assign one manual generic point to an existing amplitude catalog entry."""
+        if not isinstance(catalog_name, str):
+            raise ValidationError("Choose a registered amplitude label.")
+        entry = next((item for item in amplitude_label_catalog(self.workspace.metadata)
+                      if item["name"] == catalog_name), None)
+        if entry is None:
+            raise ValidationError("Choose a registered amplitude label.")
+        candidate = deepcopy(self.workspace)
+        for i, old in enumerate(candidate.annotations):
+            if old.id != annotation_id:
+                continue
+            if old.location.type != "point" or old.label.code != "marker" or old.origin != "manual":
+                raise ValidationError("Only manual generic point annotations can be reassigned.")
+            attributes = {**old.label.attributes,
+                          AMPLITUDE_LABEL_NAME_ATTRIBUTE: entry["name"],
+                          AMPLITUDE_LABEL_COLOR_ATTRIBUTE: entry["color"]}
+            candidate.annotations[i] = replace(
+                old, label=replace(old.label, text=entry["name"], attributes=attributes))
+            self._commit(candidate)
+            return candidate.annotations[i]
         raise ValidationError("Unknown annotation.")
 
     def delete(self, annotation_ids):

@@ -47,11 +47,11 @@ tests of the current contract. The number of tests does not imply clinical cover
 1. Run the demo and confirm that only `demo.annotations.json` is created.
 2. Zoom and drag: all time axes should remain synchronized.
 3. Create a point and an interval; verify their JSON and the immediate update.
-4. Select a row, load it into the form, edit, and save. It should preserve the ID,
-   replace the values, and create no history. Delete another row and verify the JSON.
+4. Move a selected point in **Navigate**, resize an interval endpoint, and delete a
+   selected point with **Delete**; verify each accepted change immediately in the JSON.
 5. Close and reopen: the remaining annotations should appear automatically.
 6. Export CSV twice: it should replace the same CSV without additional JSON copies.
-7. Test the enriched example: regions/recording annotations appear in the table;
-   relationships/metadata are preserved when another annotation is edited.
+7. Test the enriched example: regions/recording annotations and
+   relationships/metadata are preserved when another annotation changes.
 8. Only then compare an authorized ACQ file against AcqKnowledge before using it for
    research annotation.

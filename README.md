@@ -1,7 +1,7 @@
 # Signal Annotation · Local ACQ Viewer and Annotator · 0.2.0
 
 Python + bioread + Bokeh. Opens an ACQ file, displays up to eight synchronized channels,
-and supports manual annotation of maxima, minima, and intervals. This is a research
+and supports named manual amplitude markers and intervals. This is a research
 prototype with no clinical validation or automatic detector. The demo contains no
 patient data.
 
@@ -21,6 +21,11 @@ exists, it is validated, loaded, and displayed automatically. Every create, edit
 delete operation replaces the current JSON state. **There is no database, history,
 audit log, annotation versioning, or Undo.** `schema_version: 2` identifies the format
 only; it does not change when annotations are made.
+
+The **General recording notes** field is free text for observations about the whole
+recording, not individual annotations. **Save general notes** writes its text immediately;
+**Clear general notes** writes `metadata.general_notes` as the empty string. Notes reload
+from that same sidecar when the document opens or is reloaded.
 
 The ACQ file is never modified. A corrupt or incompatible JSON file, or one associated
 with another ACQ file, is rejected; it is not reset or overwritten. The folder must be
@@ -82,18 +87,47 @@ does not include Python or dependencies downloaded in the ZIP archive.
 ## Annotating and editing
 
 1. Choose **Navigate**. Use the mouse wheel to zoom horizontally; drag to pan
-   all channels together. You can also enter the window start and width.
-2. Zoom in on the beat; choose **Mark manual maximum** or **Mark manual minimum**, enter
-   a label, and click the channel.
-   The nearest original sample is stored. Classifying it as a maximum or minimum is
-   your decision, not an automatic calculation.
-3. Alternatively, enter the channel and time and click **Add with these times**.
-4. For intervals, select **Mark interval** and drag horizontally, or use numeric
-   start/end values. **All: global interval** covers every channel.
-5. To edit, select a row, click **Load selected row into form**, change the fields, and
-   click **Save selected row edit**. The ID is preserved.
-6. To delete, select the checkboxes and click **Delete selected rows**. The change is
-   saved immediately and there is no Undo. An annotation
+   all channels together. You can also enter the window start and width or use the
+   **Time navigation** range control below the plots; all three views stay synchronized.
+2. Zoom in on the beat. Enter a nonblank **New amplitude label**, click **Add amplitude
+   label**, and choose it from **Amplitude label**. Then choose **Mark amplitude marker**
+   and click the channel. The nearest original sample and selected label are stored
+   immediately in the JSON. The catalog accepts at most ten unique amplitude labels,
+   each with a distinct fixed color; any number of markers may reuse one label and color.
+   The marker is not an automatic maximum/minimum calculation.
+3. Alternatively, enter the time and click **Add with these times**. Numeric creation
+   uses the channel plot you interacted with most recently, or the first channel before
+   any plot interaction.
+4. Before creating an interval, enter a nonblank **New interval label**, click
+   **Add interval label**, and choose it from **Interval label**. The independent
+   interval catalog accepts at most ten unique names and assigns each a distinct fixed
+   color. That limit counts catalog entries, not interval instances.
+5. Select **Mark interval**, then either drag horizontally across a channel plot or click
+   the start and Ctrl+click a later end on that same plot. The first click is temporary;
+   changing the action or interval label cancels it without saving. You can also use
+   numeric start/end values for the most recently used plot. New intervals are always
+   channel-local and require a current catalog selection; their name, color, and catalog
+   link are saved immediately.
+6. To resize an existing interval, choose **Navigate** and drag either full-height
+   vertical edge horizontally. No preliminary band or endpoint selection is needed. The
+   edge editor is the active drag tool whenever a visible interval exists, as required by
+   Bokeh's edit gesture. Use the XPan toolbar button or the **Time navigation** control to
+   navigate while interval edges are visible. The new continuous-time bound is saved
+   immediately. It must remain inside the recording (and all assigned channels), with
+   start strictly before end. A rejected drag restores every rendered copy from the
+   unchanged JSON state. Edge movement is disabled in both marking modes.
+7. To reassign a generic point, select exactly one marker directly in the plot, choose
+   an existing **Amplitude label**, and click **Assign selected amplitude label**. Its
+   ID, geometry, provenance, and custom fields are preserved; its catalog link, name,
+   and color update together in the JSON and plot.
+8. To move a point, first choose **Navigate**, click its marker once to select it, then
+   drag it with the mouse; no toolbar activation is needed. Point movement is disabled
+   in both marking modes. The final position snaps to the nearest original sample and is
+   saved immediately.
+9. To delete a point or time interval, choose **Navigate**, select its marker or colored
+   interval band directly in the plot, and press **Delete**. A selected interval is
+   highlighted; every rendered copy of a global interval represents the same single
+   annotation. The change is saved immediately and there is no Undo. An annotation
    referenced by a relationship cannot be deleted until that relationship is explicitly
    removed.
 
@@ -106,20 +140,39 @@ is rejected; click **Reload saved state** and repeat your change.
 Each annotation separates `location` (geometry), `label` (meaning), `provenance`
 (origin/author), and `extensions`. The root object adds metadata and relationships.
 
-- Time/amplitude point: validated and rendered. The UI creates maxima/minima with a
-  sample index. The schema supports free points with `sample_index: null`.
-- Time interval: validated and rendered. The UI creates/edits one-channel or global
-  intervals. The schema also supports intervals over a subset of channels.
-- Rectangular time/amplitude region: validated and preserved; listed in the table, but
-  without a dedicated editor or graphical shading yet.
-- Whole-recording annotation: validated/preserved and visible in the table, but without
-  a dedicated graphical editor.
+- Time/amplitude point: validated and rendered. The UI creates sample-anchored markers
+  from the independent `metadata.amplitude_label_catalog`. The catalog has up to ten
+  unique names with distinct predefined colors; any number of point instances may reuse
+  one entry. New UI points store the selected name in `label.text`, its color in
+  `label.attributes.color`, and the semantic catalog name in
+  `label.attributes.amplitude_label_catalog_name`. Existing unlinked generic and
+  maximum/minimum points remain supported and render with deterministic colors. The
+  schema supports free points with `sample_index: null`.
+- Time interval: validated and rendered. The UI creates channel-local intervals from a
+  separate persistent label catalog in `metadata`. The catalog has up
+  to ten unique names with distinct predefined colors; any number of interval instances
+  can reuse one entry. New UI intervals store the selected name in `label.text`, its
+  color in `label.attributes.color`, and the semantic catalog name in
+  `label.attributes.interval_label_catalog_name`. Their bands and both endpoint handles
+  use that color. Existing manual intervals have independently draggable start/end handles;
+  a moved handle stores continuous seconds and clears only that boundary's optional
+  sample index. Older sidecars without the catalog or interval color remain valid and
+  render with a stable fallback color. Existing global intervals remain visible,
+  reloadable, resizable, and preserved. The schema also supports intervals over a subset
+  of channels.
+- Rectangular time/amplitude region: validated and preserved, but without a dedicated
+  editor or graphical representation yet.
+- Whole-recording annotation: validated and preserved, but without a dedicated
+  graphical editor or representation.
 - Recording metadata and relationships between annotations/channels: validated and
   preserved, with no graphical editor yet.
+- General recording notes: free text for the whole recording, saved at
+  `metadata.general_notes`. Empty notes are saved explicitly as `""`; no length limit is
+  imposed by the application.
 - Future proposals: a separate collection with accept/reject application operations;
   no model or AI review inbox is connected to the UI.
 
-The editing form supports only manual maxima/minima and one-channel or global intervals.
+The editing form supports legacy manual maxima/minima and one-channel or global intervals.
 Future fields are preserved when other annotations are modified. Custom fields belong
 in `metadata`, `label.attributes`, or `extensions`; unexpected fields elsewhere are
 rejected to prevent silent data loss.
@@ -127,8 +180,8 @@ rejected to prevent silent data loss.
 Details and examples: [docs/ESQUEMA.md](docs/ESQUEMA.md),
 [schema/annotations.schema.json](schema/annotations.schema.json),
 [examples/demo.annotations.json](examples/demo.annotations.json).
-The enriched example is synthetic; run the demo with `--demo-dir examples` to check the
-initial load and table. Copy the example first if you want to preserve it: the
+The enriched example is synthetic; run the demo with `--demo-dir examples` to check
+initial loading and preservation. Copy the example first if you want to preserve it: the
 application saves directly over it when you edit it.
 
 ## Exporting CSV

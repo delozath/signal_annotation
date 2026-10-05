@@ -26,7 +26,29 @@
       }
     },
     "metadata": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "amplitude_label_catalog": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/amplitude_label_catalog_entry"
+          }
+        },
+        "interval_label_catalog": {
+          "type": "array",
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/interval_label_catalog_entry"
+          }
+        },
+        "general_notes": {
+          "type": "string",
+          "description": "Recording-level free-text notes. An empty string is the explicit cleared state."
+        }
+      }
     },
     "extensions": {
       "type": "object"
@@ -46,6 +68,66 @@
   "title": "ACQ Annotation Sidecar · format 2",
   "description": "Current state only. Cross-reference, ACQ identity, sample/time/amplitude and bounds checks are additionally enforced by Python.",
   "$defs": {
+    "amplitude_label_catalog_entry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "color": {
+          "enum": [
+            "#1b9e77",
+            "#d95f02",
+            "#7570b3",
+            "#e7298a",
+            "#66a61e",
+            "#e6ab02",
+            "#a6761d",
+            "#666666",
+            "#1f78b4",
+            "#b2df8a"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "color"
+      ],
+      "additionalProperties": false
+    },
+    "interval_label_catalog_entry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "color": {
+          "enum": [
+            "#6a3d9a",
+            "#ff7f00",
+            "#1b9e77",
+            "#e7298a",
+            "#1f78b4",
+            "#b15928",
+            "#66a61e",
+            "#e6ab02",
+            "#7570b3",
+            "#d95f02"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "color"
+      ],
+      "additionalProperties": false
+    },
     "coordinate": {
       "type": "object",
       "properties": {

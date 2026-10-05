@@ -10,3 +10,4 @@ dist/
 *.annotations.json.lock/
 !examples/*.json
 !examples/*.csv
+.agents

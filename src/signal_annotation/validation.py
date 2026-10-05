@@ -5,6 +5,23 @@ from math import isclose, isfinite
 from .domain import ValidationError
 
 
+INTERVAL_LABEL_CATALOG_KEY = "interval_label_catalog"
+AMPLITUDE_LABEL_CATALOG_KEY = "amplitude_label_catalog"
+GENERAL_NOTES_KEY = "general_notes"
+INTERVAL_LABEL_NAME_ATTRIBUTE = "interval_label_catalog_name"
+INTERVAL_LABEL_COLOR_ATTRIBUTE = "color"
+AMPLITUDE_LABEL_NAME_ATTRIBUTE = "amplitude_label_catalog_name"
+AMPLITUDE_LABEL_COLOR_ATTRIBUTE = "color"
+AMPLITUDE_LABEL_COLORS = (
+    "#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e",
+    "#e6ab02", "#a6761d", "#666666", "#1f78b4", "#b2df8a",
+)
+INTERVAL_LABEL_COLORS = (
+    "#6a3d9a", "#ff7f00", "#1b9e77", "#e7298a", "#1f78b4",
+    "#b15928", "#66a61e", "#e6ab02", "#7570b3", "#d95f02",
+)
+
+
 def text(value, name, maximum=200):
     if not isinstance(value, str) or not value.strip() or len(value) > maximum:
         raise ValidationError(f"{name}: text between 1 and {maximum} characters is required.")
@@ -44,6 +61,66 @@ def validate_label(label):
     text(label.code, "Code", 80)
     text(label.text, "Label")
     mapping(label.attributes, "Label attributes")
+
+
+def interval_label_catalog(metadata):
+    """Validate and return the reserved interval-label catalog in metadata."""
+    raw = metadata.get(INTERVAL_LABEL_CATALOG_KEY, [])
+    if not isinstance(raw, list):
+        raise ValidationError("Interval label catalog must be a list.")
+    if len(raw) > len(INTERVAL_LABEL_COLORS):
+        raise ValidationError(f"At most {len(INTERVAL_LABEL_COLORS)} interval labels may be registered.")
+    names, colors, result = set(), set(), []
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"name", "color"}:
+            raise ValidationError("Each interval label catalog entry requires only name and color.")
+        name = text(entry["name"], "Interval label name")
+        if name != name.strip():
+            raise ValidationError("Interval label names may not start or end with whitespace.")
+        normalized = name.casefold()
+        if normalized in names:
+            raise ValidationError("Interval label names must be unique.")
+        color = entry["color"]
+        if color not in INTERVAL_LABEL_COLORS or color in colors:
+            raise ValidationError("Interval label colors must be distinct predefined colors.")
+        names.add(normalized)
+        colors.add(color)
+        result.append({"name": name, "color": color})
+    return tuple(result)
+
+
+def amplitude_label_catalog(metadata):
+    """Validate and return the reserved amplitude-label catalog in metadata."""
+    raw = metadata.get(AMPLITUDE_LABEL_CATALOG_KEY, [])
+    if not isinstance(raw, list):
+        raise ValidationError("Amplitude label catalog must be a list.")
+    if len(raw) > len(AMPLITUDE_LABEL_COLORS):
+        raise ValidationError(f"At most {len(AMPLITUDE_LABEL_COLORS)} amplitude labels may be registered.")
+    names, colors, result = set(), set(), []
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"name", "color"}:
+            raise ValidationError("Each amplitude label catalog entry requires only name and color.")
+        name = text(entry["name"], "Amplitude label name")
+        if name != name.strip():
+            raise ValidationError("Amplitude label names may not start or end with whitespace.")
+        normalized = name.casefold()
+        if normalized in names:
+            raise ValidationError("Amplitude label names must be unique.")
+        color = entry["color"]
+        if color not in AMPLITUDE_LABEL_COLORS or color in colors:
+            raise ValidationError("Amplitude label colors must be distinct predefined colors.")
+        names.add(normalized)
+        colors.add(color)
+        result.append({"name": name, "color": color})
+    return tuple(result)
+
+
+def general_notes(metadata):
+    """Validate and return the reserved recording-level free-text notes."""
+    raw = metadata.get(GENERAL_NOTES_KEY, "")
+    if not isinstance(raw, str):
+        raise ValidationError("General recording notes must be a string.")
+    return raw
 
 
 def validate_location(loc, recording):
@@ -104,6 +181,11 @@ def validate_workspace(workspace, recording):
         raise ValidationError("The JSON belongs to another ACQ file.")
     mapping(workspace.metadata, "Metadata")
     mapping(workspace.extensions, "Extensions")
+    catalog = interval_label_catalog(workspace.metadata)
+    amplitude_catalog = amplitude_label_catalog(workspace.metadata)
+    general_notes(workspace.metadata)
+    catalog_by_name = {entry["name"]: entry for entry in catalog}
+    amplitude_catalog_by_name = {entry["name"]: entry for entry in amplitude_catalog}
     collections = (workspace.annotations, workspace.proposals, workspace.relationships)
     if any(not isinstance(items, list) for items in collections):
         raise ValidationError("Collections must be lists.")
@@ -133,6 +215,20 @@ def validate_workspace(workspace, recording):
     for annotation in workspace.annotations:
         validate_location(annotation.location, recording)
         validate_label(annotation.label)
+        catalog_name = annotation.label.attributes.get(INTERVAL_LABEL_NAME_ATTRIBUTE)
+        if catalog_name is not None:
+            entry = catalog_by_name.get(catalog_name)
+            if (annotation.location.type != "interval" or entry is None or
+                    annotation.label.text != catalog_name or
+                    annotation.label.attributes.get(INTERVAL_LABEL_COLOR_ATTRIBUTE) != entry["color"]):
+                raise ValidationError("The interval label does not match its catalog entry.")
+        amplitude_catalog_name = annotation.label.attributes.get(AMPLITUDE_LABEL_NAME_ATTRIBUTE)
+        if amplitude_catalog_name is not None:
+            entry = amplitude_catalog_by_name.get(amplitude_catalog_name)
+            if (annotation.location.type != "point" or annotation.label.code != "marker" or
+                    entry is None or annotation.label.text != amplitude_catalog_name or
+                    annotation.label.attributes.get(AMPLITUDE_LABEL_COLOR_ATTRIBUTE) != entry["color"]):
+                raise ValidationError("The amplitude label does not match its catalog entry.")
         mapping(annotation.extensions, "Annotation extensions")
         p = annotation.provenance
         text(p.author, "Author", 80)

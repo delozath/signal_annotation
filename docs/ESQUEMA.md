@@ -11,7 +11,8 @@ current state. It contains no history, audit log, snapshots, or complete signal 
 - `annotations`: current confirmed annotations.
 - `proposals`: current proposals and review state, separate from annotations.
 - `relationships`: directed relationships between annotations and/or channels.
-- `metadata`: user/protocol-defined recording metadata.
+- `metadata`: user/protocol-defined recording metadata plus the reserved optional
+  `amplitude_label_catalog`, `interval_label_catalog`, and `general_notes` described below.
 - `extensions`: future namespaced properties, preferably prefixed by organization or
   protocol to avoid collisions.
 
@@ -53,6 +54,8 @@ sample. For complete valid examples, see `examples/demo.annotations.json`.
 - `interval`: start and end with `start < end`; no amplitude. `channel_ids: []` means
   global; one or more channels constrain it to the common available interval. Bounds
   are continuous by default; an optional index requires one channel and time consistency.
+  Dragging one endpoint in the current interface replaces only that coordinate with a
+  continuous-seconds coordinate (`sample_index: null`) and persists it immediately.
 - `region`: a time/amplitude box on exactly one channel. It has a start/end and
   minimum/maximum amplitude, with minimum < maximum. The point value is `null`. The box
   amplitude need not match observed values, but its units must.
@@ -61,8 +64,60 @@ sample. For complete valid examples, see `examples/demo.annotations.json`.
 
 Locations do not encode meaning: a region may represent an artifact, review, or any
 other code; a point may be a maximum, minimum, or another event. Codes and texts are
-strings, not closed enums. `label.attributes` accepts semantic JSON attributes, such as
+strings, not closed enums. New catalog-created amplitude markers persist their selected
+name, fixed palette color, and semantic catalog link; older points without those
+attributes remain valid.
+`label.attributes` accepts semantic JSON attributes, such as
 a project-defined quality scale.
+
+## Amplitude-label catalog
+
+The optional `metadata.amplitude_label_catalog` is independent of the interval catalog
+and has the same `{name, color}` entry shape. It accepts at most ten entries. Names must
+be nonblank and unique (case-insensitively), and colors must be distinct members of the
+predefined amplitude palette. The limit applies to catalog entries, not point instances:
+any number of markers may reuse the same entry.
+
+A new marker created by the UI requires a selected entry. Its `label.text` contains the
+selected name and `label.attributes` contains both `color` and
+`amplitude_label_catalog_name`. Those values must continue to match the catalog. A
+selected manual generic marker may be reassigned only to another registered entry;
+geometry, identity, provenance, extensions, and ordering are preserved. Sidecars that
+predate the catalog, including unlinked generic and maximum/minimum points, remain valid
+and render with deterministic fallback colors.
+
+## Interval-label catalog
+
+The optional `metadata.interval_label_catalog` is independent of the amplitude-label catalog and has
+this current-state shape:
+
+```json
+[
+  {"name": "Movement artifact", "color": "#6a3d9a"},
+  {"name": "Sleep", "color": "#ff7f00"}
+]
+```
+
+It accepts at most ten entries. Names must be nonblank and unique (case-insensitively),
+and colors must be distinct members of the predefined interval palette. Other metadata
+is preserved when an entry is added. The limit applies only to catalog entries: many
+interval annotations may reuse the same entry.
+
+A new interval created by the UI requires a selected entry. Its `label.text` contains
+the selected name and `label.attributes` contains both `color` and
+`interval_label_catalog_name`. Those three values must continue to match the catalog,
+which is the semantic link between the interval instance and its type. Invalid catalog
+state or a missing selection is rejected without replacing the current JSON. Sidecars
+that predate this catalog remain valid; their intervals render with the deterministic
+legacy fallback color.
+
+## General recording notes
+
+The optional `metadata.general_notes` is a recording-level JSON string containing free
+text observations. It is not attached to any annotation and has no application-imposed
+length limit. The UI saves the field immediately. Clearing it persists the explicit
+empty-string state, `"general_notes": ""`, rather than removing the reserved key. A
+non-string reserved value is invalid and is rejected without replacing the sidecar.
 
 ## Relationships
 
@@ -89,6 +144,8 @@ edits preserve the ID and creation provenance without storing previous values.
 combinations. The code adds checks that JSON Schema cannot express by itself: equality
 with the open ACQ file, references, channel bounds, index/time/amplitude consistency,
 and proposal/annotation correspondence.
+The code additionally enforces amplitude- and interval-catalog name/color uniqueness
+and each catalog-created annotation's semantic link to its catalog entry.
 
 Duplicate JSON keys, non-finite numbers, unexpected fields outside extensible areas,
 and unknown format versions are rejected. Valid extensions are preserved when loading,

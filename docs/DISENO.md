@@ -98,8 +98,9 @@ before reading and the 12-million-sample limit after decoding.
 
 ## Graphical scope
 
-The UI renders loaded points and intervals and lists all annotations. It creates/edits
-manual maxima/minima and one-channel or global intervals. Regions, recording
+The UI renders loaded points and intervals. It creates channel-local manual points and
+intervals; existing global intervals remain rendered,
+resizable, reloadable, and preserved. Regions, recording
 annotations, metadata, and relationships are validated and preserved, but their
 graphical editors remain pending. CSV export includes all current annotations. The
 schema supports proposals; the UI has no review inbox or detector.
