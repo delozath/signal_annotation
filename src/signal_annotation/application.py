@@ -5,9 +5,11 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from .domain import Annotation, Amplitude, Coordinate, Label, Location, Provenance, ValidationError
 from .validation import (AMPLITUDE_LABEL_CATALOG_KEY, AMPLITUDE_LABEL_COLOR_ATTRIBUTE,
-                         AMPLITUDE_LABEL_COLORS, AMPLITUDE_LABEL_NAME_ATTRIBUTE,
+                         AMPLITUDE_LABEL_COLORS, AMPLITUDE_LABEL_ID_ATTRIBUTE,
+                         AMPLITUDE_LABEL_NAME_ATTRIBUTE,
                          GENERAL_NOTES_KEY, INTERVAL_LABEL_CATALOG_KEY,
                          INTERVAL_LABEL_COLOR_ATTRIBUTE, INTERVAL_LABEL_COLORS,
+                         INTERVAL_LABEL_ID_ATTRIBUTE,
                          INTERVAL_LABEL_NAME_ATTRIBUTE, amplitude_label_catalog,
                          interval_label_catalog, text, validate_workspace)
 
@@ -41,6 +43,11 @@ def interval_color(annotation, workspace):
     if annotation.location.type != "interval":
         raise ValidationError("Only intervals have interval-label colors.")
     attributes = annotation.label.attributes
+    if INTERVAL_LABEL_ID_ATTRIBUTE in attributes:
+        color = attributes.get(INTERVAL_LABEL_COLOR_ATTRIBUTE)
+        if (attributes.get(INTERVAL_LABEL_NAME_ATTRIBUTE) == annotation.label.text and
+                color in INTERVAL_LABEL_COLORS):
+            return color
     catalog_name = attributes.get(INTERVAL_LABEL_NAME_ATTRIBUTE)
     for entry in interval_label_catalog(workspace.metadata):
         if (entry["name"] == catalog_name == annotation.label.text and
@@ -54,11 +61,42 @@ def now():
 
 
 class AnnotationService:
-    def __init__(self, recording, repository, author):
+    def __init__(self, recording, repository, author, catalog_repository=None):
         self.recording, self.repository = recording, repository
         self.author = text(author.strip(), "Author", 80)
-        self.workspace = repository.load()
-        validate_workspace(self.workspace, recording)
+        self.catalog_repository = catalog_repository
+        # Load the external catalog first so a corrupt catalog cannot cause an absent
+        # annotation sidecar to be created as a side effect of opening the service.
+        catalog = catalog_repository.load() if catalog_repository is not None else None
+        workspace = repository.load()
+        validate_workspace(workspace, recording)
+        self.catalog = catalog
+        self.workspace = workspace
+
+    @staticmethod
+    def _entry_dict(entry):
+        return {"id": entry.id, "name": entry.name, "color": entry.color}
+
+    def _external_entry(self, collection, catalog_id, message):
+        if not isinstance(catalog_id, str):
+            raise ValidationError(message)
+        # Each annotation command resolves against current durable catalog content;
+        # corrupt, deleted, or replaced catalogs cannot silently reuse a cached entry.
+        catalog = self.catalog_repository.load()
+        entry = next((item for item in catalog.collection(collection)
+                      if item.id == catalog_id), None)
+        if entry is None:
+            raise ValidationError(message)
+        return catalog, entry
+
+    def _refresh_catalog_after_add(self):
+        """Cache the catalog that the repository actually committed.
+
+        The repository may have been used elsewhere since this service last loaded it.
+        Reconstructing from ``self.catalog`` would then omit durable entries (and can
+        assign a different palette position).  A post-commit load is read-only.
+        """
+        self.catalog = self.catalog_repository.load()
 
     def _commit(self, candidate):
         validate_workspace(candidate, self.recording)
@@ -94,6 +132,10 @@ class AnnotationService:
 
     def add_amplitude_label(self, name):
         """Append one unique amplitude label to its independent persistent catalog."""
+        if self.catalog_repository is not None:
+            entry = self.catalog_repository.add("amplitude_labels", name)
+            self._refresh_catalog_after_add()
+            return self._entry_dict(entry)
         name = text(name, "Amplitude label name").strip()
         candidate = deepcopy(self.workspace)
         catalog = list(amplitude_label_catalog(candidate.metadata))
@@ -109,25 +151,39 @@ class AnnotationService:
         self._commit(candidate)
         return entry
 
-    def add_catalog_marker(self, channel_id, start, catalog_name):
+    def add_catalog_marker(self, channel_id, start, catalog_id):
         """Create a point whose semantic label is selected from the amplitude catalog."""
-        if not isinstance(catalog_name, str):
-            raise ValidationError("Choose a registered amplitude label.")
-        entry = next((item for item in amplitude_label_catalog(self.workspace.metadata)
-                      if item["name"] == catalog_name), None)
-        if entry is None:
-            raise ValidationError("Choose a registered amplitude label.")
+        resolved_catalog = None
+        if self.catalog_repository is not None:
+            resolved_catalog, external_entry = self._external_entry(
+                "amplitude_labels", catalog_id, "Choose a registered amplitude label.")
+            entry = self._entry_dict(external_entry)
+        else:
+            if not isinstance(catalog_id, str):
+                raise ValidationError("Choose a registered amplitude label.")
+            entry = next((item for item in amplitude_label_catalog(self.workspace.metadata)
+                          if item["name"] == catalog_id), None)
+            if entry is None:
+                raise ValidationError("Choose a registered amplitude label.")
         attributes = {AMPLITUDE_LABEL_NAME_ATTRIBUTE: entry["name"],
                       AMPLITUDE_LABEL_COLOR_ATTRIBUTE: entry["color"]}
+        if "id" in entry:
+            attributes[AMPLITUDE_LABEL_ID_ATTRIBUTE] = entry["id"]
         annotation = self._manual("marker", channel_id, start, None, entry["name"],
                                   attributes=attributes)
         candidate = deepcopy(self.workspace)
         candidate.annotations.append(annotation)
         self._commit(candidate)
+        if resolved_catalog is not None:
+            self.catalog = resolved_catalog
         return annotation
 
     def add_interval_label(self, name):
         """Append one unique interval label to the independent persistent catalog."""
+        if self.catalog_repository is not None:
+            entry = self.catalog_repository.add("interval_labels", name)
+            self._refresh_catalog_after_add()
+            return self._entry_dict(entry)
         name = text(name, "Interval label name").strip()
         candidate = deepcopy(self.workspace)
         catalog = list(interval_label_catalog(candidate.metadata))
@@ -152,21 +208,31 @@ class AnnotationService:
         candidate.metadata[GENERAL_NOTES_KEY] = notes
         self._commit(candidate)
 
-    def add_catalog_interval(self, channel_id, start, end, catalog_name):
+    def add_catalog_interval(self, channel_id, start, end, catalog_id):
         """Create an interval whose semantic label is selected from the catalog."""
-        if not isinstance(catalog_name, str):
-            raise ValidationError("Choose a registered interval label.")
-        entry = next((item for item in interval_label_catalog(self.workspace.metadata)
-                      if item["name"] == catalog_name), None)
-        if entry is None:
-            raise ValidationError("Choose a registered interval label.")
+        resolved_catalog = None
+        if self.catalog_repository is not None:
+            resolved_catalog, external_entry = self._external_entry(
+                "interval_labels", catalog_id, "Choose a registered interval label.")
+            entry = self._entry_dict(external_entry)
+        else:
+            if not isinstance(catalog_id, str):
+                raise ValidationError("Choose a registered interval label.")
+            entry = next((item for item in interval_label_catalog(self.workspace.metadata)
+                          if item["name"] == catalog_id), None)
+            if entry is None:
+                raise ValidationError("Choose a registered interval label.")
         attributes = {INTERVAL_LABEL_NAME_ATTRIBUTE: entry["name"],
                       INTERVAL_LABEL_COLOR_ATTRIBUTE: entry["color"]}
+        if "id" in entry:
+            attributes[INTERVAL_LABEL_ID_ATTRIBUTE] = entry["id"]
         annotation = self._manual("interval", channel_id, start, end, entry["name"],
                                   attributes=attributes)
         candidate = deepcopy(self.workspace)
         candidate.annotations.append(annotation)
         self._commit(candidate)
+        if resolved_catalog is not None:
+            self.catalog = resolved_catalog
         return annotation
 
     def edit(self, annotation_id, kind, channel_id, start, end, label):
@@ -222,14 +288,20 @@ class AnnotationService:
             return resized
         raise ValidationError("Unknown annotation.")
 
-    def reassign_point_label(self, annotation_id, catalog_name):
+    def reassign_point_label(self, annotation_id, catalog_id):
         """Assign one manual generic point to an existing amplitude catalog entry."""
-        if not isinstance(catalog_name, str):
-            raise ValidationError("Choose a registered amplitude label.")
-        entry = next((item for item in amplitude_label_catalog(self.workspace.metadata)
-                      if item["name"] == catalog_name), None)
-        if entry is None:
-            raise ValidationError("Choose a registered amplitude label.")
+        resolved_catalog = None
+        if self.catalog_repository is not None:
+            resolved_catalog, external_entry = self._external_entry(
+                "amplitude_labels", catalog_id, "Choose a registered amplitude label.")
+            entry = self._entry_dict(external_entry)
+        else:
+            if not isinstance(catalog_id, str):
+                raise ValidationError("Choose a registered amplitude label.")
+            entry = next((item for item in amplitude_label_catalog(self.workspace.metadata)
+                          if item["name"] == catalog_id), None)
+            if entry is None:
+                raise ValidationError("Choose a registered amplitude label.")
         candidate = deepcopy(self.workspace)
         for i, old in enumerate(candidate.annotations):
             if old.id != annotation_id:
@@ -239,9 +311,15 @@ class AnnotationService:
             attributes = {**old.label.attributes,
                           AMPLITUDE_LABEL_NAME_ATTRIBUTE: entry["name"],
                           AMPLITUDE_LABEL_COLOR_ATTRIBUTE: entry["color"]}
+            if "id" in entry:
+                attributes[AMPLITUDE_LABEL_ID_ATTRIBUTE] = entry["id"]
+            else:
+                attributes.pop(AMPLITUDE_LABEL_ID_ATTRIBUTE, None)
             candidate.annotations[i] = replace(
                 old, label=replace(old.label, text=entry["name"], attributes=attributes))
             self._commit(candidate)
+            if resolved_catalog is not None:
+                self.catalog = resolved_catalog
             return candidate.annotations[i]
         raise ValidationError("Unknown annotation.")
 
@@ -256,8 +334,10 @@ class AnnotationService:
         self._commit(candidate)
 
     def reload(self):
+        catalog = self.catalog_repository.load() if self.catalog_repository is not None else None
         candidate = self.repository.load()
         validate_workspace(candidate, self.recording)
+        self.catalog = catalog
         self.workspace = candidate
 
     def register_proposals(self, proposals):

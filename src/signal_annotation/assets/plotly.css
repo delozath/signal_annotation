@@ -1,0 +1,67 @@
+.signal-annotation-app {
+  color: #1d2939;
+  font-family: system-ui, sans-serif;
+  margin: 0 auto;
+  max-width: 1200px;
+  padding: 1rem;
+}
+
+.app-header, .mode-controls, .time-controls, .catalog-control-row, .notes-controls, .numeric-creation-row {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.time-controls {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin: 0.75rem 0;
+}
+
+.catalog-controls, .notes-controls, .numeric-creation-controls {
+  margin: 0.75rem 0;
+}
+
+.catalog-control-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin: 0.5rem 0;
+}
+
+.numeric-creation-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin: 0.5rem 0;
+}
+
+.numeric-creation-row input {
+  max-width: 9rem;
+}
+
+.catalog-control-row .Select {
+  min-width: 18rem;
+}
+
+.notes-controls {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.notes-controls textarea {
+  min-height: 6rem;
+  min-width: min(100%, 32rem);
+}
+
+.time-controls input {
+  max-width: 8rem;
+}
+
+.plot-region {
+  min-height: 18rem;
+}
+
+#status-region {
+  min-height: 1.5rem;
+}

@@ -8,8 +8,10 @@ from .domain import ValidationError
 INTERVAL_LABEL_CATALOG_KEY = "interval_label_catalog"
 AMPLITUDE_LABEL_CATALOG_KEY = "amplitude_label_catalog"
 GENERAL_NOTES_KEY = "general_notes"
+INTERVAL_LABEL_ID_ATTRIBUTE = "interval_label_catalog_id"
 INTERVAL_LABEL_NAME_ATTRIBUTE = "interval_label_catalog_name"
 INTERVAL_LABEL_COLOR_ATTRIBUTE = "color"
+AMPLITUDE_LABEL_ID_ATTRIBUTE = "amplitude_label_catalog_id"
 AMPLITUDE_LABEL_NAME_ATTRIBUTE = "amplitude_label_catalog_name"
 AMPLITUDE_LABEL_COLOR_ATTRIBUTE = "color"
 AMPLITUDE_LABEL_COLORS = (
@@ -123,6 +125,21 @@ def general_notes(metadata):
     return raw
 
 
+def validate_catalog_snapshot(attributes, *, id_attribute, name_attribute,
+                              color_attribute, colors, label_name):
+    """Validate one self-contained external-catalog reference and its snapshots."""
+    identity = text(attributes.get(id_attribute), f"{label_name} catalog ID", 100)
+    if identity != identity.strip():
+        raise ValidationError(f"{label_name} catalog ID may not start or end with whitespace.")
+    name = text(attributes.get(name_attribute), f"{label_name} name")
+    if name != name.strip():
+        raise ValidationError(f"{label_name} names may not start or end with whitespace.")
+    color = attributes.get(color_attribute)
+    if color not in colors:
+        raise ValidationError(f"{label_name} color must be a predefined color.")
+    return name, color
+
+
 def validate_location(loc, recording):
     if loc.type not in {"point", "interval", "region", "recording"}:
         raise ValidationError("Unknown location type.")
@@ -215,19 +232,38 @@ def validate_workspace(workspace, recording):
     for annotation in workspace.annotations:
         validate_location(annotation.location, recording)
         validate_label(annotation.label)
-        catalog_name = annotation.label.attributes.get(INTERVAL_LABEL_NAME_ATTRIBUTE)
-        if catalog_name is not None:
+        attributes = annotation.label.attributes
+        catalog_name = attributes.get(INTERVAL_LABEL_NAME_ATTRIBUTE)
+        if INTERVAL_LABEL_ID_ATTRIBUTE in attributes:
+            snapshot_name, _ = validate_catalog_snapshot(
+                attributes, id_attribute=INTERVAL_LABEL_ID_ATTRIBUTE,
+                name_attribute=INTERVAL_LABEL_NAME_ATTRIBUTE,
+                color_attribute=INTERVAL_LABEL_COLOR_ATTRIBUTE,
+                colors=INTERVAL_LABEL_COLORS, label_name="Interval label")
+            if (annotation.location.type != "interval" or annotation.label.code != "interval" or
+                    annotation.label.text != snapshot_name):
+                raise ValidationError("The interval label does not match its external catalog snapshot.")
+        elif catalog_name is not None:
             entry = catalog_by_name.get(catalog_name)
             if (annotation.location.type != "interval" or entry is None or
                     annotation.label.text != catalog_name or
-                    annotation.label.attributes.get(INTERVAL_LABEL_COLOR_ATTRIBUTE) != entry["color"]):
+                    attributes.get(INTERVAL_LABEL_COLOR_ATTRIBUTE) != entry["color"]):
                 raise ValidationError("The interval label does not match its catalog entry.")
-        amplitude_catalog_name = annotation.label.attributes.get(AMPLITUDE_LABEL_NAME_ATTRIBUTE)
-        if amplitude_catalog_name is not None:
+        amplitude_catalog_name = attributes.get(AMPLITUDE_LABEL_NAME_ATTRIBUTE)
+        if AMPLITUDE_LABEL_ID_ATTRIBUTE in attributes:
+            snapshot_name, _ = validate_catalog_snapshot(
+                attributes, id_attribute=AMPLITUDE_LABEL_ID_ATTRIBUTE,
+                name_attribute=AMPLITUDE_LABEL_NAME_ATTRIBUTE,
+                color_attribute=AMPLITUDE_LABEL_COLOR_ATTRIBUTE,
+                colors=AMPLITUDE_LABEL_COLORS, label_name="Amplitude label")
+            if (annotation.location.type != "point" or annotation.label.code != "marker" or
+                    annotation.label.text != snapshot_name):
+                raise ValidationError("The amplitude label does not match its external catalog snapshot.")
+        elif amplitude_catalog_name is not None:
             entry = amplitude_catalog_by_name.get(amplitude_catalog_name)
             if (annotation.location.type != "point" or annotation.label.code != "marker" or
                     entry is None or annotation.label.text != amplitude_catalog_name or
-                    annotation.label.attributes.get(AMPLITUDE_LABEL_COLOR_ATTRIBUTE) != entry["color"]):
+                    attributes.get(AMPLITUDE_LABEL_COLOR_ATTRIBUTE) != entry["color"]):
                 raise ValidationError("The amplitude label does not match its catalog entry.")
         mapping(annotation.extensions, "Annotation extensions")
         p = annotation.provenance
